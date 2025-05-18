@@ -63,11 +63,7 @@ function! s:GroupToAnsi(groupnum)
     let s:ansicache = {}
   endif
 
-  let groupnum = a:groupnum
-
-  if groupnum == 0
-    let groupnum = hlID('Normal')
-  endif
+  let groupnum = a:groupnum == 0 ? hlID('Normal') : a:groupnum
 
   if has_key(s:ansicache, groupnum)
     return s:ansicache[groupnum]
@@ -79,15 +75,8 @@ function! s:GroupToAnsi(groupnum)
   let bd = synIDattr(groupnum, 'bold', s:type)
   let bg = 0
 
-  " FIXME other attributes?
-
-  if rv == "" || rv == -1
-    let rv = 0
-  endif
-
-  if bd == "" || bd == -1
-    let bd = 0
-  endif
+  let rv = (rv == "" || rv == -1) ? 0 : rv
+  let bd = (bd == "" || bd == -1) ? 0 : bd
 
   if rv
     let temp = bg
@@ -104,7 +93,7 @@ function! s:GroupToAnsi(groupnum)
     unlet fg
   endif
 
-  if !exists('fg') && !groupnum == hlID('Normal')
+  if !exists('fg') && groupnum != hlID('Normal')
     let fg = synIDattr(hlID('Normal'), 'fg', s:type)
     if fg == "" || fg == -1
       unlet fg
@@ -115,7 +104,7 @@ function! s:GroupToAnsi(groupnum)
     unlet bg
   endif
 
-  if !exists('bg') && !groupnum == hlID('Normal')
+  if !exists('bg') && groupnum != hlID('Normal')
     let bg = synIDattr(hlID('Normal'), 'bg', s:type)
     if bg == "" || bg == -1
       unlet bg
@@ -123,25 +112,19 @@ function! s:GroupToAnsi(groupnum)
   endif
 
   let retv = "\<Esc>[22;24;25;27;28"
-
   if bd
     let retv .= ";1"
   endif
 
-  if exists('fg') && fg < 8
-    let retv .= ";3" . fg
-  elseif exists('fg')
-    let retv .= ";38;5;" . fg
+  if exists('fg')
+    let retv .= fg < 8 ? ";3" . fg : ";38;5;" . fg
   endif
 
-  if exists('bg') && bg < 8
-    let retv .= ";4" . bg
-  elseif exists('bg')
-    let retv .= ";48;5;" . bg
+  if exists('bg')
+    let retv .= bg < 8 ? ";4" . bg : ";48;5;" . bg
   endif
 
   let retv .= "m"
-
   let s:ansicache[groupnum] = retv
 
   return retv
@@ -149,30 +132,24 @@ endfunction
 
 function! AnsiHighlight()
   let retv = []
+  let last = hlID('Normal')
+  let output = s:GroupToAnsi(last) . "\<Esc>[K" " Clear to right
 
   for lnum in range(1, line('$'))
-    let last = hlID('Normal')
-    let output = s:GroupToAnsi(last) . "\<Esc>[K" " Clear to right
-
-        " Hopefully fix highlighting sync issues
-    exe "norm! " . lnum . "G$"
-
     let line = getline(lnum)
-
-    for cnum in range(1, col('.'))
-      if synIDtrans(synID(lnum, cnum, 1)) != last
-        let last = synIDtrans(synID(lnum, cnum, 1))
+    let line_len = len(line)
+    for cnum in range(1, line_len + 1)
+      let current = synIDtrans(synID(lnum, cnum, 1))
+      if current != last
+        let last = current
         let output .= s:GroupToAnsi(last)
       endif
-
-      let output .= matchstr(line, '\%(\zs.\)\{'.cnum.'}')
-      "let line = substitute(line, '.', '', '')
-            "let line = matchstr(line, '^\@<!.*')
+      let output .= line[cnum - 1]
     endfor
+    let output .= "\n"
     let retv += [output]
+    let output = s:GroupToAnsi(last) . "\<Esc>[K"
   endfor
-  " Reset the colors to default after displaying the file
   let retv[-1] .= "\<Esc>[0m"
-
   return writefile(retv, '/proc/self/fd/9')
 endfunction
